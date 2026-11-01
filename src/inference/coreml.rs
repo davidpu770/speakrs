@@ -129,24 +129,26 @@ impl CoreMlModel {
         &mut self,
         inputs: &[(&str, &[usize], &[f32])],
     ) -> Result<CoreMlTensor, CoreMlError> {
-        self.input_dict.removeAllObjects();
+        objc2::rc::autoreleasepool(|_pool| {
+            self.input_dict.removeAllObjects();
 
-        for &(name, shape, data) in inputs {
-            let layout = TensorLayout::from_dims(shape, "coreml input")?;
-            let bound = layout.bind(data)?;
-            let multi_array =
-                create_multi_array_with_deallocator(bound, shape, &self.noop_deallocator)?;
-            let key = NSString::from_str(name);
-            let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*key);
-            insert_input_feature(&self.input_dict, key_copy, &multi_array);
-        }
+            for &(name, shape, data) in inputs {
+                let layout = TensorLayout::from_dims(shape, "coreml input")?;
+                let bound = layout.bind(data)?;
+                let multi_array =
+                    create_multi_array_with_deallocator(bound, shape, &self.noop_deallocator)?;
+                let key = NSString::from_str(name);
+                let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*key);
+                insert_input_feature(&self.input_dict, key_copy, &multi_array);
+            }
 
-        let provider = build_feature_provider(&self.input_dict)?;
-        let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
-            ProtocolObject::from_ref(&*provider);
-        let output_array =
-            predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
-        extract_output(&output_array)
+            let provider = build_feature_provider(&self.input_dict)?;
+            let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
+                ProtocolObject::from_ref(&*provider);
+            let output_array =
+                predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
+            extract_output(&output_array)
+        })
     }
 
     /// Run prediction with cached shape and stride objects.
@@ -154,25 +156,28 @@ impl CoreMlModel {
         &mut self,
         inputs: &[(&CachedInputShape, &[f32])],
     ) -> Result<CoreMlTensor, CoreMlError> {
-        self.input_dict.removeAllObjects();
+        objc2::rc::autoreleasepool(|_pool| {
+            self.input_dict.removeAllObjects();
 
-        for &(cached, data) in inputs {
-            let bound = cached.bind(data)?;
-            let multi_array = create_multi_array_cached_with_deallocator(
-                bound.data,
-                bound.cached,
-                &self.noop_deallocator,
-            )?;
-            let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*cached.name);
-            insert_input_feature(&self.input_dict, key_copy, &multi_array);
-        }
+            for &(cached, data) in inputs {
+                let bound = cached.bind(data)?;
+                let multi_array = create_multi_array_cached_with_deallocator(
+                    bound.data,
+                    bound.cached,
+                    &self.noop_deallocator,
+                )?;
+                let key_copy: &ProtocolObject<dyn NSCopying> =
+                    ProtocolObject::from_ref(&*cached.name);
+                insert_input_feature(&self.input_dict, key_copy, &multi_array);
+            }
 
-        let provider = build_feature_provider(&self.input_dict)?;
-        let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
-            ProtocolObject::from_ref(&*provider);
-        let output_array =
-            predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
-        extract_output(&output_array)
+            let provider = build_feature_provider(&self.input_dict)?;
+            let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
+                ProtocolObject::from_ref(&*provider);
+            let output_array =
+                predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
+            extract_output(&output_array)
+        })
     }
 
     /// Default compute units. CoreML decides placement per operation.
@@ -217,24 +222,30 @@ impl SharedCoreMlModel {
         &self,
         inputs: &[(&CachedInputShape, &[f32])],
     ) -> Result<CoreMlTensor, CoreMlError> {
-        let deallocator = noop_deallocator();
-        let input_dict: Retained<NSMutableDictionary<NSString, AnyObject>> =
-            NSMutableDictionary::new();
+        objc2::rc::autoreleasepool(|_pool| {
+            let deallocator = noop_deallocator();
+            let input_dict: Retained<NSMutableDictionary<NSString, AnyObject>> =
+                NSMutableDictionary::new();
 
-        for &(cached, data) in inputs {
-            let bound = cached.bind(data)?;
-            let multi_array =
-                create_multi_array_cached_with_deallocator(bound.data, bound.cached, &deallocator)?;
-            let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*cached.name);
-            insert_input_feature(&input_dict, key_copy, &multi_array);
-        }
+            for &(cached, data) in inputs {
+                let bound = cached.bind(data)?;
+                let multi_array = create_multi_array_cached_with_deallocator(
+                    bound.data,
+                    bound.cached,
+                    &deallocator,
+                )?;
+                let key_copy: &ProtocolObject<dyn NSCopying> =
+                    ProtocolObject::from_ref(&*cached.name);
+                insert_input_feature(&input_dict, key_copy, &multi_array);
+            }
 
-        let provider = build_feature_provider(&input_dict)?;
-        let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
-            ProtocolObject::from_ref(&*provider);
-        let output_array =
-            predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
-        extract_output(&output_array)
+            let provider = build_feature_provider(&input_dict)?;
+            let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
+                ProtocolObject::from_ref(&*provider);
+            let output_array =
+                predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
+            extract_output(&output_array)
+        })
     }
 }
 
