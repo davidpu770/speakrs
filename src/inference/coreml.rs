@@ -141,24 +141,26 @@ impl CoreMlModel {
         &mut self,
         inputs: &[(&str, &[usize], &[f32])],
     ) -> Result<CoreMlTensor, CoreMlError> {
-        self.input_dict.removeAllObjects();
+        objc2::rc::autoreleasepool(|_pool| {
+            self.input_dict.removeAllObjects();
 
-        for &(name, shape, data) in inputs {
-            let layout = TensorLayout::from_dims(shape, "coreml input")?;
-            let bound = layout.bind(data)?;
-            let multi_array =
-                create_multi_array_with_deallocator(bound, shape, &self.noop_deallocator)?;
-            let key = NSString::from_str(name);
-            let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*key);
-            insert_input_feature(&self.input_dict, key_copy, &multi_array);
-        }
+            for &(name, shape, data) in inputs {
+                let layout = TensorLayout::from_dims(shape, "coreml input")?;
+                let bound = layout.bind(data)?;
+                let multi_array =
+                    create_multi_array_with_deallocator(bound, shape, &self.noop_deallocator)?;
+                let key = NSString::from_str(name);
+                let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*key);
+                insert_input_feature(&self.input_dict, key_copy, &multi_array);
+            }
 
-        let provider = build_feature_provider(&self.input_dict)?;
-        let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
-            ProtocolObject::from_ref(&*provider);
-        let output_array =
-            predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
-        extract_output(&output_array)
+            let provider = build_feature_provider(&self.input_dict)?;
+            let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
+                ProtocolObject::from_ref(&*provider);
+            let output_array =
+                predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
+            extract_output(&output_array)
+        })
     }
 
     /// Run prediction with cached shape and stride objects.
@@ -166,25 +168,28 @@ impl CoreMlModel {
         &mut self,
         inputs: &[(&CachedInputShape, &[f32])],
     ) -> Result<CoreMlTensor, CoreMlError> {
-        self.input_dict.removeAllObjects();
+        objc2::rc::autoreleasepool(|_pool| {
+            self.input_dict.removeAllObjects();
 
-        for &(cached, data) in inputs {
-            let bound = cached.bind(data)?;
-            let multi_array = create_multi_array_cached_with_deallocator(
-                bound.data,
-                bound.cached,
-                &self.noop_deallocator,
-            )?;
-            let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*cached.name);
-            insert_input_feature(&self.input_dict, key_copy, &multi_array);
-        }
+            for &(cached, data) in inputs {
+                let bound = cached.bind(data)?;
+                let multi_array = create_multi_array_cached_with_deallocator(
+                    bound.data,
+                    bound.cached,
+                    &self.noop_deallocator,
+                )?;
+                let key_copy: &ProtocolObject<dyn NSCopying> =
+                    ProtocolObject::from_ref(&*cached.name);
+                insert_input_feature(&self.input_dict, key_copy, &multi_array);
+            }
 
-        let provider = build_feature_provider(&self.input_dict)?;
-        let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
-            ProtocolObject::from_ref(&*provider);
-        let output_array =
-            predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
-        extract_output(&output_array)
+            let provider = build_feature_provider(&self.input_dict)?;
+            let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
+                ProtocolObject::from_ref(&*provider);
+            let output_array =
+                predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
+            extract_output(&output_array)
+        })
     }
 
     /// Default compute units. CoreML decides placement per operation.
@@ -230,24 +235,30 @@ impl SharedCoreMlModel {
         &self,
         inputs: &[(&CachedInputShape, &[f32])],
     ) -> Result<CoreMlTensor, CoreMlError> {
-        let deallocator = noop_deallocator();
-        let input_dict: Retained<NSMutableDictionary<NSString, AnyObject>> =
-            NSMutableDictionary::new();
+        objc2::rc::autoreleasepool(|_pool| {
+            let deallocator = noop_deallocator();
+            let input_dict: Retained<NSMutableDictionary<NSString, AnyObject>> =
+                NSMutableDictionary::new();
 
-        for &(cached, data) in inputs {
-            let bound = cached.bind(data)?;
-            let multi_array =
-                create_multi_array_cached_with_deallocator(bound.data, bound.cached, &deallocator)?;
-            let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*cached.name);
-            insert_input_feature(&input_dict, key_copy, &multi_array);
-        }
+            for &(cached, data) in inputs {
+                let bound = cached.bind(data)?;
+                let multi_array = create_multi_array_cached_with_deallocator(
+                    bound.data,
+                    bound.cached,
+                    &deallocator,
+                )?;
+                let key_copy: &ProtocolObject<dyn NSCopying> =
+                    ProtocolObject::from_ref(&*cached.name);
+                insert_input_feature(&input_dict, key_copy, &multi_array);
+            }
 
-        let provider = build_feature_provider(&input_dict)?;
-        let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
-            ProtocolObject::from_ref(&*provider);
-        let output_array =
-            predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
-        extract_output(&output_array)
+            let provider = build_feature_provider(&input_dict)?;
+            let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
+                ProtocolObject::from_ref(&*provider);
+            let output_array =
+                predict_output(&self.model, input_ref, &self.output_key, &self.output_name)?;
+            extract_output(&output_array)
+        })
     }
 
     /// Async prediction: queues work on ANE and returns via callback
@@ -261,63 +272,69 @@ impl SharedCoreMlModel {
         &self,
         inputs: &[(&CachedInputShape, &[f32])],
     ) -> Result<CoreMlTensor, CoreMlError> {
-        let deallocator = noop_deallocator();
-        let input_dict: Retained<NSMutableDictionary<NSString, AnyObject>> =
-            NSMutableDictionary::new();
+        objc2::rc::autoreleasepool(|_pool| {
+            let deallocator = noop_deallocator();
+            let input_dict: Retained<NSMutableDictionary<NSString, AnyObject>> =
+                NSMutableDictionary::new();
 
-        for &(cached, data) in inputs {
-            let bound = cached.bind(data)?;
-            let multi_array =
-                create_multi_array_cached_with_deallocator(bound.data, bound.cached, &deallocator)?;
-            let key_copy: &ProtocolObject<dyn NSCopying> = ProtocolObject::from_ref(&*cached.name);
-            insert_input_feature(&input_dict, key_copy, &multi_array);
-        }
+            for &(cached, data) in inputs {
+                let bound = cached.bind(data)?;
+                let multi_array = create_multi_array_cached_with_deallocator(
+                    bound.data,
+                    bound.cached,
+                    &deallocator,
+                )?;
+                let key_copy: &ProtocolObject<dyn NSCopying> =
+                    ProtocolObject::from_ref(&*cached.name);
+                insert_input_feature(&input_dict, key_copy, &multi_array);
+            }
 
-        let provider = build_feature_provider(&input_dict)?;
-        let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
-            ProtocolObject::from_ref(&*provider);
+            let provider = build_feature_provider(&input_dict)?;
+            let input_ref: &ProtocolObject<dyn MLFeatureProvider> =
+                ProtocolObject::from_ref(&*provider);
 
-        // bridge the async callback to a blocking channel
-        let (tx, rx) = std::sync::mpsc::sync_channel::<
-            Result<Retained<ProtocolObject<dyn MLFeatureProvider>>, String>,
-        >(1);
+            // bridge the async callback to a blocking channel
+            let (tx, rx) = std::sync::mpsc::sync_channel::<
+                Result<Retained<ProtocolObject<dyn MLFeatureProvider>>, String>,
+            >(1);
 
-        let completion = block2::RcBlock::new(
-            move |output: *mut ProtocolObject<dyn MLFeatureProvider>, error: *mut NSError| {
-                if !error.is_null() {
-                    // SAFETY: error is non-null in this branch and points to the NSError passed
-                    // SAFETY: by CoreML for the duration of the callback invocation
-                    let err_msg = unsafe { (*error).localizedDescription() }.to_string();
-                    let _ = tx.send(Err(err_msg));
-                } else if output.is_null() {
-                    let _ = tx.send(Err("nil output with no error".to_owned()));
-                } else {
-                    // SAFETY: output is non-null in this branch and retain extends the lifetime so
-                    // SAFETY: the returned feature provider survives after the callback returns
-                    let Some(retained) = (unsafe { Retained::retain(output) }) else {
-                        let _ = tx.send(Err("failed to retain CoreML output".to_owned()));
-                        return;
-                    };
-                    let _ = tx.send(Ok(retained));
-                }
-            },
-        );
+            let completion = block2::RcBlock::new(
+                move |output: *mut ProtocolObject<dyn MLFeatureProvider>, error: *mut NSError| {
+                    if !error.is_null() {
+                        // SAFETY: error is non-null in this branch and points to the NSError passed
+                        // SAFETY: by CoreML for the duration of the callback invocation
+                        let err_msg = unsafe { (*error).localizedDescription() }.to_string();
+                        let _ = tx.send(Err(err_msg));
+                    } else if output.is_null() {
+                        let _ = tx.send(Err("nil output with no error".to_owned()));
+                    } else {
+                        // SAFETY: output is non-null in this branch and retain extends the lifetime so
+                        // SAFETY: the returned feature provider survives after the callback returns
+                        let Some(retained) = (unsafe { Retained::retain(output) }) else {
+                            let _ = tx.send(Err("failed to retain CoreML output".to_owned()));
+                            return;
+                        };
+                        let _ = tx.send(Ok(retained));
+                    }
+                },
+            );
 
-        // SAFETY: input_ref and completion stay alive for the duration of the Objective-C call and
-        // SAFETY: CoreML copies/retains the callback before invoking it asynchronously
-        unsafe {
-            self.model
-                .predictionFromFeatures_completionHandler(input_ref, &completion);
-        }
+            // SAFETY: input_ref and completion stay alive for the duration of the Objective-C call and
+            // SAFETY: CoreML copies/retains the callback before invoking it asynchronously
+            unsafe {
+                self.model
+                    .predictionFromFeatures_completionHandler(input_ref, &completion);
+            }
 
-        // block until the callback fires
-        let output = rx
-            .recv()
-            .map_err(|_| CoreMlError::PredictionFailed("channel closed".to_owned()))?
-            .map_err(CoreMlError::PredictionFailed)?;
+            // block until the callback fires
+            let output = rx
+                .recv()
+                .map_err(|_| CoreMlError::PredictionFailed("channel closed".to_owned()))?
+                .map_err(CoreMlError::PredictionFailed)?;
 
-        let output_array = output_multi_array(&output, &self.output_key, &self.output_name)?;
-        extract_output(&output_array)
+            let output_array = output_multi_array(&output, &self.output_key, &self.output_name)?;
+            extract_output(&output_array)
+        })
     }
 }
 
